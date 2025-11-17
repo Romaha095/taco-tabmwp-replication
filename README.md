@@ -1,4 +1,4 @@
-Inštalácia a príprava dát (pre členov tímu)
+Inštalácia a príprava dát 
 1️⃣ Nainštalujte závislosti
 pip install -r requirements.txt
 
