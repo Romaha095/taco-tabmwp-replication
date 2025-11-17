@@ -1,19 +1,16 @@
 import json
 import os
-import re
 
 RAW_DIR = "data/raw/tabmwp"
 OUT_PATH = "data/processed/tabmwp.jsonl"
 
 
 def linearize_table(table_pd: dict) -> str:
-    """Линеаризація using table_for_pd."""
+    """Линеаризация из table_for_pd."""
     cols = list(table_pd.keys())
-    col1 = cols[0]
-    col2 = cols[1]
+    col1, col2 = cols[0], cols[1]
 
-    rows = []
-    rows.append(f"HEAD: {col1.strip()} | {col2.strip()}")
+    rows = [f"HEAD: {col1.strip()} | {col2.strip()}"]
 
     for i, (a, b) in enumerate(zip(table_pd[col1], table_pd[col2]), start=1):
         rows.append(f"ROW{i}: {a} | {b}")
@@ -21,37 +18,37 @@ def linearize_table(table_pd: dict) -> str:
     return "\n".join(rows)
 
 
-def load_raw():
-    files = [
-        "problems_train.json",
-        "problems_dev.json",
-        "problems_test.json"
-    ]
+def read_split(filename, split_name):
+    """Загружает один файл и проставляет split."""
+    path = os.path.join(RAW_DIR, filename)
+    print(f"Loading {split_name} from {path}...")
 
-    all_examples = []
+    raw = json.load(open(path, "r", encoding="utf-8"))
+    examples = []
 
-    for fname in files:
-        path = os.path.join(RAW_DIR, fname)
-        raw = json.load(open(path, "r", encoding="utf-8"))
-        all_examples.extend(list(raw.values()))
+    for ex in raw.values():
+        ex["split"] = split_name   # <<< ВАЖНО
+        examples.append(ex)
 
-    return all_examples
+    return examples
 
 
 if __name__ == "__main__":
     os.makedirs("data/processed", exist_ok=True)
 
-    raw = load_raw()
+    train = read_split("problems_train.json", "train")
+    dev   = read_split("problems_dev.json", "dev")
+    test  = read_split("problems_test.json", "test")
+
+    all_examples = train + dev + test
 
     with open(OUT_PATH, "w", encoding="utf-8") as out:
-        for i, ex in enumerate(raw):
-            table_lin = linearize_table(ex["table_for_pd"])
-
+        for i, ex in enumerate(all_examples):
             item = {
                 "id": i,
                 "split": ex["split"],
                 "table_title": ex["table_title"],
-                "table_linearized": table_lin,
+                "table_linearized": linearize_table(ex["table_for_pd"]),
                 "question": ex["question"],
                 "cot_solution": ex["solution"],
                 "answer": ex["answer"],
@@ -59,7 +56,6 @@ if __name__ == "__main__":
                 "ans_type": ex["ans_type"],
                 "grade": ex["grade"]
             }
-
             out.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-    print("Created:", OUT_PATH)
+    print("DONE! Saved", len(all_examples), "examples →", OUT_PATH)
