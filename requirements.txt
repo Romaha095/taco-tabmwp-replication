@@ -1,0 +1,6 @@
+transformers>=4.40.0
+datasets>=2.18.0
+pandas
+numpy
+tqdm
+accelerate

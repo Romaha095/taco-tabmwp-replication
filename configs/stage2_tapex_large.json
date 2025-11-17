@@ -1,0 +1,16 @@
+{
+  "model_name": "google/flan-t5-large",
+  "max_input_length": 512,
+  "max_output_length": 32,
+  "learning_rate": 3e-5,
+  "batch_size": 4,
+  "gradient_accumulation_steps": 2,
+  "num_train_epochs": 3,
+  "save_steps": 1000,
+  "eval_steps": 1000,
+  "fp16": true,
+  "predict_with_generate": true,
+  "warmup_steps": 100,
+  "weight_decay": 0.01,
+  "logging_steps": 200
+}
