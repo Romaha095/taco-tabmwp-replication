@@ -1,6 +1,5 @@
 import argparse
 import json
-import logging
 import math
 from pathlib import Path
 from typing import Any, Dict
@@ -16,6 +15,8 @@ from transformers import (
 )
 
 from models.tapex_loader import load_tapex
+from utils.seed import set_seed_all
+from utils.logger import get_logger
 
 
 def get_project_root() -> Path:
@@ -30,16 +31,6 @@ def load_config(project_root: Path, config_path_str: str) -> Dict[str, Any]:
         raise FileNotFoundError(f"Config file not found: {config_path}")
     with config_path.open("r", encoding="utf-8") as f:
         return json.load(f)
-
-
-def setup_logging() -> None:
-    logging.basicConfig(
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        level=logging.INFO,
-    )
-    logging.getLogger("transformers").setLevel(logging.INFO)
-    logging.getLogger("datasets").setLevel(logging.INFO)
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,10 +66,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    setup_logging()
-    logger = logging.getLogger("train_stage1")
 
     project_root = get_project_root()
+    log_file = project_root / "logs" / "train_stage1.log"
+    logger = get_logger("train_stage1", log_file=log_file)
     logger.info(f"Project root: {project_root}")
 
     # ---------- Load config ----------
@@ -101,6 +92,7 @@ def main() -> None:
     weight_decay = float(cfg.get("weight_decay", 0.01))
 
     # ---------- Seed ----------
+    set_seed_all(args.seed)
     hf_set_seed(args.seed)
     logger.info(f"Using seed = {args.seed}")
 
@@ -115,7 +107,10 @@ def main() -> None:
 
     if model.config.pad_token_id is None and tokenizer.pad_token_id is not None:
         model.config.pad_token_id = tokenizer.pad_token_id
-    if model.config.decoder_start_token_id is None and tokenizer.bos_token_id is not None:
+    if (
+        getattr(model.config, "decoder_start_token_id", None) is None
+        and getattr(tokenizer, "bos_token_id", None) is not None
+    ):
         model.config.decoder_start_token_id = tokenizer.bos_token_id
 
     # ---------- Tokenization ----------
@@ -123,7 +118,6 @@ def main() -> None:
     logger.info(f"Columns in raw dataset: {column_names}")
 
     def preprocess_function(examples):
-        # TapexTokenizer ждёт текст в аргументе `answer`
         model_inputs = tokenizer(
             answer=examples["input_text"],
             max_length=max_input_length,
@@ -181,7 +175,6 @@ def main() -> None:
         f"warmup_fraction = {warmup_fraction} -> warmup_steps = {warmup_steps}"
     )
 
-    # Все желаемые args в одном dict
     args_dict: Dict[str, Any] = {
         "output_dir": str(output_dir),
         "overwrite_output_dir": True,
@@ -211,7 +204,6 @@ def main() -> None:
         "max_grad_norm": 1.0,
     }
 
-    # Инспекция сигнатуры Seq2SeqTrainingArguments и фильтрация неподдерживаемых ключей
     sig = signature(Seq2SeqTrainingArguments.__init__)
     valid_keys = set(sig.parameters.keys()) - {"self", "*args", "**kwargs"}
     filtered_args = {k: v for k, v in args_dict.items() if k in valid_keys}
