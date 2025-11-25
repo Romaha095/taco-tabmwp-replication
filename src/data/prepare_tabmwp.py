@@ -1,12 +1,20 @@
 import json
-import os
+from pathlib import Path
 
-RAW_DIR = "data/raw/tabmwp"
-OUT_PATH = "data/processed/tabmwp.jsonl"
 
+def get_project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+project_root = get_project_root()
+RAW_DIR = project_root / "data" / "raw" / "tabmwp"
+OUT_PATH = project_root / "data" / "processed" / "tabmwp.jsonl"
+
+
+def ensure_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
 
 def linearize_table(table_pd: dict) -> str:
-    """Линеаризация из table_for_pd."""
     cols = list(table_pd.keys())
     col1, col2 = cols[0], cols[1]
 
@@ -19,8 +27,7 @@ def linearize_table(table_pd: dict) -> str:
 
 
 def read_split(filename, split_name):
-    """Загружает один файл и проставляет split."""
-    path = os.path.join(RAW_DIR, filename)
+    path = RAW_DIR / filename
     print(f"Loading {split_name} from {path}...")
 
     raw = json.load(open(path, "r", encoding="utf-8"))
@@ -34,7 +41,7 @@ def read_split(filename, split_name):
 
 
 if __name__ == "__main__":
-    os.makedirs("data/processed", exist_ok=True)
+    ensure_dir(OUT_PATH.parent)
 
     train = read_split("problems_train.json", "train")
     dev   = read_split("problems_dev.json", "dev")
