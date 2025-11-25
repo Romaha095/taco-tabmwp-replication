@@ -1,0 +1,23 @@
+{
+  "model_name": "microsoft/tapex-base",
+
+  "max_input_length": 768,
+  "max_output_length": 256,
+
+  "learning_rate": 3e-5,
+
+  "batch_size": 4,
+  "gradient_accumulation_steps": 4,
+
+  "num_train_epochs": 20,
+
+  "save_steps": 1000,
+  "eval_steps": 1000,
+  "logging_steps": 200,
+
+  "predict_with_generate": false,
+  "fp16": true,
+
+  "warmup_fraction": 0.1,
+  "weight_decay": 0.01
+}
