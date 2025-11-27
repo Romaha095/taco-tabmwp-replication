@@ -7,9 +7,9 @@
   "learning_rate": 3e-5,
 
   "batch_size": 4,
-  "gradient_accumulation_steps": 8,
+  "gradient_accumulation_steps": 4,
 
-  "num_train_epochs": 20,
+  "num_train_epochs": 15,
 
   "save_steps": 1000,
   "eval_steps": 1000,
