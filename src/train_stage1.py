@@ -12,11 +12,12 @@ from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
     set_seed as hf_set_seed,
+    TrainerCallback,
 )
 
 from models.tapex_loader import load_tapex
 from utils.seed import set_seed_all
-from utils.logger import get_logger
+from utils.logger import get_logger, HFLossLoggingCallback
 
 
 def get_project_root() -> Path:
@@ -63,7 +64,6 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-
 def main() -> None:
     args = parse_args()
 
@@ -71,6 +71,8 @@ def main() -> None:
     log_file = project_root / "logs" / "train_stage1.log"
     logger = get_logger("train_stage1", log_file=log_file)
     logger.info(f"Project root: {project_root}")
+
+    get_logger("transformers.trainer", log_file=log_file)
 
     # ---------- Load config ----------
     cfg = load_config(project_root, args.config_path)
@@ -233,6 +235,8 @@ def main() -> None:
         compute_metrics=None,
     )
 
+    trainer.add_callback(HFLossLoggingCallback(logger))
+
     logger.info("Starting training for Stage 1 (CoT generation)")
     train_result = trainer.train()
     trainer.save_model()
@@ -250,6 +254,8 @@ def main() -> None:
         eval_metrics["eval_samples"] = len(eval_dataset)
         trainer.log_metrics("eval", eval_metrics)
         trainer.save_metrics("eval", eval_metrics)
+
+        logger.info(f"Final eval metrics: {eval_metrics}")
 
     logger.info("Training for Stage 1 finished.")
 
