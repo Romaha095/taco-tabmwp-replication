@@ -67,7 +67,8 @@ def main() -> None:
     args = parse_args()
 
     project_root = get_project_root()
-    log_file = project_root / "logs" / "train_stage2.log"
+    config_name = Path(args.config_path).stem
+    log_file = project_root / "logs" / f"train_{config_name}.log"
     logger = get_logger("train_stage2", log_file=log_file)
     logger.info(f"Project root: {project_root}")
 
