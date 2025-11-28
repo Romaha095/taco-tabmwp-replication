@@ -130,10 +130,6 @@ def extract_table_matrix(example: Dict[str, Any]) -> Tuple[Optional[List[str]], 
 
 
 def linearize_table(headers: List[str], rows: List[List[str]]) -> str:
-    """
-    Линеаризация таблицы по схеме:
-    [HEAD] : c1 | c2 | ... | cN [ROW] 1 : r11 | r12 | ... | r1N ...
-    """
     header_part = "[HEAD] : " + " | ".join(headers)
     row_parts = []
     for i, row in enumerate(rows, start=1):

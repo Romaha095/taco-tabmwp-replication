@@ -1,6 +1,19 @@
 import logging
 from pathlib import Path
 from typing import Optional
+from transformers import TrainerCallback
+
+class HFLossLoggingCallback(TrainerCallback):
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if not logs:
+            return
+
+        logs = {k: v for k, v in logs.items() if k != "total_flos"}
+
+        self.logger.info(f"Train step={state.global_step}: {logs}")
 
 
 def get_logger(name: str, log_file: Optional[Path] = None) -> logging.Logger:

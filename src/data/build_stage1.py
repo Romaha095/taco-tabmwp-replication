@@ -32,9 +32,6 @@ def solution_to_text(sol: Any) -> str:
 
 
 def build_input_text(example: Dict[str, Any]) -> str:
-    """
-    Вход для Stage 1: T* + Q + триггер.
-    """
     table_part = example.get("table_linearized", "")
     question = example.get("question", "")
     parts = []
