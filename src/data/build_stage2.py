@@ -1,13 +1,22 @@
 import json
+from pathlib import Path
 from datasets import Dataset, DatasetDict
 
-IN_PATH = "data/processed/tabmwp.jsonl"
-OUT_DIR = "data/stage2"
+
+def get_project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+project_root = get_project_root()
+IN_PATH = project_root / "data" / "processed" / "tabmwp.jsonl"
+OUT_DIR = project_root / "data" / "stage2"
 
 
 def load_processed():
-    with open(IN_PATH, "r", encoding="utf-8") as f:
-        return [json.loads(line) for line in f]
+    return [
+        json.loads(line)
+        for line in IN_PATH.read_text(encoding="utf-8").splitlines()
+    ]
 
 
 if __name__ == "__main__":
@@ -41,5 +50,7 @@ if __name__ == "__main__":
         "test": Dataset.from_list(test)
     })
 
-    ds.save_to_disk(OUT_DIR)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    ds.save_to_disk(str(OUT_DIR))
+
     print("Saved Stage2:", OUT_DIR)
