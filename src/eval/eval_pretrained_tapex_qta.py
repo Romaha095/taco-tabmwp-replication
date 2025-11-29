@@ -13,30 +13,45 @@ from src.eval.evaluate_acc import get_scores, print_scores
 from src.data.build_stage2_from_stage1 import extract_prediction
 
 def normalize_answer(text: str, unit: str) -> str:
+    if text is None:
+        return ""
+
+    text = str(text).strip()
+    if text == "":
+        return ""
+
     text = re.sub(r"^[\$]", "", text)
-    text = re.sub(r"[\,\.\,\/]$", "", text)
+    text = re.sub(r"[,\./]$", "", text).strip()
 
-    result = re.match(r"^[-+]?[\d,./]+$", text)
+    is_number = re.match(r"^[-+]?[0-9][0-9,./]*$", text) is not None
 
-    if result is not None:
-        text_clean = text.replace(",", "")
-        result_int = re.match(r"[-+]?\d+$", text_clean)
+    if is_number:
+        text_clean = text.replace(",", "").strip()
+        if text_clean == "":
+            return ""
 
-        if result_int is not None:
-            number = int(text_clean)
-        elif "/" in text_clean:
-            nums = text_clean.split("/")
-            number = round(float(nums[0]) / float(nums[1]), 3)
-        else:
-            number = round(float(text_clean), 3)
+        try:
+            if "/" in text_clean:
+                nums = text_clean.split("/")
+                if len(nums) == 2 and nums[0].strip() != "" and nums[1].strip() != "":
+                    number = float(nums[0]) / float(nums[1])
+                else:
+                    return text_clean
+            else:
+                number = float(text_clean)
 
-        number_str = str(number)
-        number_str = re.sub(r"\.[0]+$", "", number_str)
-        return number_str
+            number = round(number, 3)
+            number_str = str(number)
+            number_str = re.sub(r"\.[0]+$", "", number_str)
+            return number_str
+
+        except ValueError:
+            return text_clean
     else:
         if unit:
             text = text.replace(unit, "").strip()
         return text
+
 
 
 PRETRAINED_MODELS = {
