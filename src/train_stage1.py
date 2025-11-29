@@ -42,13 +42,13 @@ def parse_args() -> argparse.Namespace:
         "--config_path",
         type=str,
         default="configs/stage1_tapex_large.json",
-        help="Path to JSON config with hyper-parameters (relative to project root).",
+        help="Path to JSON config with hyper-parameters.",
     )
     parser.add_argument(
         "--dataset_path",
         type=str,
         default="data/stage1",
-        help="Path to HF dataset for Stage 1 (created by build_stage1_dataset.py).",
+        help="Path to HF dataset for Stage 1.",
     )
     parser.add_argument(
         "--output_dir",
@@ -190,7 +190,7 @@ def main() -> None:
         "per_device_train_batch_size": batch_size,
         "per_device_eval_batch_size": batch_size,
         "gradient_accumulation_steps": grad_accum,
-        "evaluation_strategy": "steps" if eval_dataset is not None else "no",
+        "eval_strategy": "steps" if eval_dataset is not None else "no",
         "save_strategy": "steps",
         "save_steps": save_steps,
         "eval_steps": eval_steps,
@@ -200,7 +200,9 @@ def main() -> None:
         "fp16": fp16,
         "dataloader_pin_memory": True,
         "gradient_checkpointing": False,
-        "load_best_model_at_end": False,
+        "load_best_model_at_end": eval_dataset is not None,
+        "metric_for_best_model" : "eval_loss",
+        "greater_is_better" : False,
         "save_total_limit": 2,
         "report_to": ["none"],
         "label_smoothing_factor": 0.0,
