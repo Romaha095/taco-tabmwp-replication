@@ -12,6 +12,7 @@ from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 from src.utils.cot_calculator import fix_cot_with_calculator
 
+
 def _replace_punctuation(s: str) -> str:
     return s.replace("\"", "").replace("'", "")
 
@@ -90,6 +91,7 @@ def run_stage1_inference(
     max_source_length: int = 512,
     max_target_length: int = 128,
     num_beams: int = 4,
+    use_calculator: bool = False,
 ) -> Dict[str, Dict]:
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -109,7 +111,6 @@ def run_stage1_inference(
         "num_rhs_correct": 0,
         "num_rhs_fixed": 0,
     }
-
 
     for start in tqdm(range(0, len(pids), batch_size), desc="Stage1 inference"):
         end = min(start + batch_size, len(pids))
@@ -136,29 +137,35 @@ def run_stage1_inference(
 
         for pid, cot in zip(batch_pids, decoded):
             cot = str(cot).strip()
-
-            cot_fixed, stats = fix_cot_with_calculator(cot)
-            for k in total_stats:
-                total_stats[k] += stats.get(k, 0)
-
             prob = problems[pid]
-
             options = prob.get("choices") or []
-            calc_answer_raw = extract_prediction(cot_fixed, options)
+
+            if use_calculator:
+                cot_fixed, stats = fix_cot_with_calculator(cot)
+                for k in total_stats:
+                    total_stats[k] += stats.get(k, 0)
+                cot_for_stage2 = cot_fixed
+            else:
+                cot_for_stage2 = cot
+
+            calc_answer_raw = extract_prediction(cot_for_stage2, options)
 
             results[pid] = {
-                "cot": cot,
+                "cot": cot_for_stage2,
                 "calc_answer_raw": calc_answer_raw,
             }
 
-    print(
-        "[Calculator stats] "
-        f"equations={total_stats['num_equations']}, "
-        f"eval_success={total_stats['num_eval_success']}, "
-        f"rhs_numeric={total_stats['num_rhs_numeric']}, "
-        f"rhs_correct={total_stats['num_rhs_correct']}, "
-        f"rhs_fixed={total_stats['num_rhs_fixed']}"
-    )
+    if use_calculator:
+        print(
+            "[Calculator stats] "
+            f"equations={total_stats['num_equations']}, "
+            f"eval_success={total_stats['num_eval_success']}, "
+            f"rhs_numeric={total_stats['num_rhs_numeric']}, "
+            f"rhs_correct={total_stats['num_rhs_correct']}, "
+            f"rhs_fixed={total_stats['num_rhs_fixed']}"
+        )
+    else:
+        print("[Calculator stats] calculator disabled, no equations processed.")
 
     return results
 
@@ -197,7 +204,9 @@ def build_stage2_dataset_from_stage1(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Stage1 (CoT) -> calculator -> build Stage2 HF dataset for TabMWP."
+        description=(
+            "Stage1 (CoT) -> optionally calculator -> build Stage2 HF dataset for TabMWP."
+        )
     )
     parser.add_argument(
         "--stage1_checkpoint_dir",
@@ -221,6 +230,11 @@ def main():
     parser.add_argument("--max_source_length_stage1", type=int, default=512)
     parser.add_argument("--max_target_length_stage1", type=int, default=128)
     parser.add_argument("--num_beams_stage1", type=int, default=4)
+    parser.add_argument(
+        "--use_calculator",
+        action="store_true",
+        help="If set, apply external calculator to fix CoT equations before building Stage2 dataset.",
+    )
     args = parser.parse_args()
 
     print("Loading problems from:", args.data_file)
@@ -228,7 +242,11 @@ def main():
         problems: Dict[str, Dict] = json.load(f)
     print(f"Loaded {len(problems)} problems.")
 
-    print("Running Stage1 inference (CoT + calculator)...")
+    if args.use_calculator:
+        print("Running Stage1 inference (CoT + calculator)...")
+    else:
+        print("Running Stage1 inference (CoT only, calculator disabled)...")
+
     stage1_outputs = run_stage1_inference(
         stage1_ckpt_dir=args.stage1_checkpoint_dir,
         problems=problems,
@@ -236,6 +254,7 @@ def main():
         max_source_length=args.max_source_length_stage1,
         max_target_length=args.max_target_length_stage1,
         num_beams=args.num_beams_stage1,
+        use_calculator=args.use_calculator,
     )
 
     print("Building Stage2 dataset from Stage1 outputs...")
