@@ -9,7 +9,7 @@ import torch
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-from evaluate_acc import get_scores, print_scores
+from src.eval.evaluate_acc import get_scores, print_scores
 from src.data.build_stage2_from_stage1 import extract_prediction
 
 def normalize_answer(text: str, unit: str) -> str:
