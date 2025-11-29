@@ -1,5 +1,5 @@
 {
-  "model_name": "microsoft/tapex-base",
+  "model_name": "microsoft/tapex-base-finetuned-wtq",
 
   "max_input_length": 768,
   "max_output_length": 256,
