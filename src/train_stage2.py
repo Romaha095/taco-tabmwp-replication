@@ -1,7 +1,6 @@
 import argparse
 import json
 import math
-import sys
 from pathlib import Path
 from typing import Any, Dict
 from inspect import signature
@@ -26,7 +25,7 @@ def get_project_root() -> Path:
 def load_config(project_root: Path, config_path_str: str) -> Dict[str, Any]:
     config_path = Path(config_path_str)
     if not config_path.is_absolute():
-        config_path = project_root / config_path_str
+        config_path = project_root / config_path
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
     with config_path.open("r", encoding="utf-8") as f:
@@ -75,22 +74,6 @@ def main() -> None:
 
     get_logger("transformers.trainer", log_file=log_file)
 
-    # Make project root importable so we can import modules from top-level
-    if str(project_root) not in sys.path:
-        sys.path.append(str(project_root))
-
-    # Import zip/upload helpers (optional)
-    try:
-        from zip_files import zip_checkpoints_and_logs
-        from api_upload import upload_file_to_drive
-    except Exception as e:
-        logger.warning(
-            f"Could not import zip_files/api_upload modules; "
-            f"automatic upload to Google Drive will be disabled. Error: {e}"
-        )
-        zip_checkpoints_and_logs = None  # type: ignore
-        upload_file_to_drive = None      # type: ignore
-
     # ---------- Load config ----------
     cfg = load_config(project_root, args.config_path)
     logger.info(f"Loaded config from {args.config_path}: {cfg}")
@@ -136,7 +119,9 @@ def main() -> None:
     column_names = raw_datasets["train"].column_names
     logger.info(f"Columns in raw Stage 2 dataset: {column_names}")
 
+    # Stage 2: input_text = table + question + CoT, target_text = answer
     def preprocess_function(examples):
+        # encode encoder input
         model_inputs = tokenizer(
             answer=examples["input_text"],
             max_length=max_input_length,
@@ -218,8 +203,8 @@ def main() -> None:
         "dataloader_pin_memory": True,
         "gradient_checkpointing": False,
         "load_best_model_at_end": eval_dataset is not None,
-        "metric_for_best_model": "eval_loss",
-        "greater_is_better": False,
+        "metric_for_best_model" : "eval_loss",
+        "greater_is_better" : False,
         "save_total_limit": 2,
         "report_to": ["none"],
         "label_smoothing_factor": 0.0,
@@ -233,7 +218,7 @@ def main() -> None:
     missing = sorted(set(args_dict.keys()) - set(filtered_args.keys()))
     if missing:
         logger.info(
-            "Seq2SeqTrainingArguments in your transformers version "
+            f"Seq2SeqTrainingArguments in your transformers version "
             f"does not support: {missing}. They are skipped."
         )
 
@@ -274,26 +259,8 @@ def main() -> None:
         eval_metrics["eval_samples"] = len(eval_dataset)
         trainer.log_metrics("eval", eval_metrics)
         trainer.save_metrics("eval", eval_metrics)
-        logger.info(f"Final Stage 2 eval (loss) metrics: {eval_metrics}")
 
-    # ---------- ZIP + upload to Google Drive ----------
-    if "zip_checkpoints_and_logs" in locals() and "upload_file_to_drive" in locals():
-        if zip_checkpoints_and_logs is not None and upload_file_to_drive is not None:
-            try:
-                zip_paths = zip_checkpoints_and_logs(
-                    base_dir=str(project_root / "checkpoints"),
-                    logs_dir=str(project_root / "logs"),
-                )
-                for path in zip_paths:
-                    logger.info(f"Uploading file to Google Drive: {path}")
-                    file_id = upload_file_to_drive(path)
-                    logger.info(f"Uploaded to Google Drive with file_id={file_id}")
-            except Exception as e:
-                logger.error(f"Failed to zip/upload checkpoints/logs to Google Drive: {e}")
-        else:
-            logger.info("zip_checkpoints_and_logs or upload_file_to_drive is None; skipping upload.")
-    else:
-        logger.info("zip_files/api_upload modules not available; skipping upload to Google Drive.")
+        logger.info(f"Final Stage 2 eval (loss) metrics: {eval_metrics}")
 
     logger.info("Training for Stage 2 finished.")
 
