@@ -23,6 +23,13 @@ def has_non_empty_solution(example: Dict[str, Any]) -> bool:
     return bool(str(sol).strip())
 
 
+def has_non_empty_answer(example: Dict[str, Any]) -> bool:
+    ans = example.get("answer")
+    if ans is None:
+        return False
+    return bool(str(ans).strip())
+
+
 def solution_to_text(sol: Any) -> str:
     if sol is None:
         return ""
@@ -31,13 +38,13 @@ def solution_to_text(sol: Any) -> str:
     return str(sol).strip()
 
 
-def answer_to_text(ans: Any) -> str:
-    if ans is None:
-        return ""
-    return str(ans).strip()
-
-
 def build_input_text_stage2(example: Dict[str, Any]) -> str:
+    """
+    Вход для Stage 2:
+    T* + Q + триггер + gold CoT.
+
+    На инференсе вместо gold CoT сюда будешь подставлять предсказанный CoT.
+    """
     table_part = example.get("table_linearized", "")
     question = example.get("question", "")
     solution = solution_to_text(example.get("solution"))
@@ -54,18 +61,9 @@ def build_input_text_stage2(example: Dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def has_non_empty_solution_and_answer(example: Dict[str, Any]) -> bool:
-    if not has_non_empty_solution(example):
-        return False
-    ans = example.get("answer")
-    if ans is None:
-        return False
-    return bool(str(ans).strip())
-
-
 def parse_args_stage2() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Build HF dataset for Stage 2 (answer inference) from processed TABMWP."
+        description="Build HF dataset for Stage 2 (answer prediction using gold CoT) from processed TABMWP."
     )
     parser.add_argument(
         "--processed_dir",
@@ -109,11 +107,13 @@ def main() -> None:
     print(f"[*] Loading processed data from: {processed_dir}")
     raw_ds = load_dataset("json", data_files=data_files)
 
-    print("[*] Filtering examples without gold solution or gold answer (Stage 2 needs both).")
+    print("[*] Filtering examples without gold solutions or answers (Stage 2 needs both).")
     filtered_ds = DatasetDict()
     for split, ds in raw_ds.items():
         before = ds.num_rows
-        ds_filtered = ds.filter(has_non_empty_solution_and_answer)
+        ds_filtered = ds.filter(
+            lambda ex: has_non_empty_solution(ex) and has_non_empty_answer(ex)
+        )
         after = ds_filtered.num_rows
         print(f"[+] Split '{split}': before={before}, after={after}")
         filtered_ds[split] = ds_filtered
@@ -121,7 +121,7 @@ def main() -> None:
     def map_example(example: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "input_text": build_input_text_stage2(example),
-            "target_text": answer_to_text(example.get("answer")),
+            "target_text": str(example.get("answer", "")).strip(),
         }
 
     print("[*] Mapping to (input_text, target_text) pairs for Stage 2.")
