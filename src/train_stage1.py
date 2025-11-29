@@ -1,7 +1,6 @@
 import argparse
 import json
 import math
-import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -13,6 +12,7 @@ from transformers import (
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
     set_seed as hf_set_seed,
+    TrainerCallback,
 )
 
 from models.tapex_loader import load_tapex
@@ -27,7 +27,7 @@ def get_project_root() -> Path:
 def load_config(project_root: Path, config_path_str: str) -> Dict[str, Any]:
     config_path = Path(config_path_str)
     if not config_path.is_absolute():
-        config_path = project_root / config_path_str
+        config_path = project_root / config_path
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
     with config_path.open("r", encoding="utf-8") as f:
@@ -64,7 +64,6 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-
 def main() -> None:
     args = parse_args()
 
@@ -74,24 +73,7 @@ def main() -> None:
     logger = get_logger("train_stage1", log_file=log_file)
     logger.info(f"Project root: {project_root}")
 
-    # Setup HF trainer logger into same file
     get_logger("transformers.trainer", log_file=log_file)
-
-    # Make project root importable so we can import modules from top-level
-    if str(project_root) not in sys.path:
-        sys.path.append(str(project_root))
-
-    # Import zip/upload helpers (optional)
-    try:
-        from zip_files import zip_checkpoints_and_logs
-        from api_upload import upload_file_to_drive
-    except Exception as e:
-        logger.warning(
-            f"Could not import zip_files/api_upload modules; "
-            f"automatic upload to Google Drive will be disabled. Error: {e}"
-        )
-        zip_checkpoints_and_logs = None  # type: ignore
-        upload_file_to_drive = None      # type: ignore
 
     # ---------- Load config ----------
     cfg = load_config(project_root, args.config_path)
@@ -116,186 +98,167 @@ def main() -> None:
     set_seed_all(args.seed)
     hf_set_seed(args.seed)
     logger.info(f"Using seed = {args.seed}")
-    #
-    # # ---------- Load dataset ----------
-    # dataset_path = project_root / args.dataset_path
-    # logger.info(f"Loading Stage 1 dataset from {dataset_path}")
-    # raw_datasets = load_from_disk(str(dataset_path))
-    #
-    # # ---------- Load TAPEX ----------
-    # logger.info(f"Loading TAPEX model '{model_name}'")
-    # tokenizer, model = load_tapex(model_name)
-    #
-    # if model.config.pad_token_id is None and tokenizer.pad_token_id is not None:
-    #     model.config.pad_token_id = tokenizer.pad_token_id
-    # if (
-    #     getattr(model.config, "decoder_start_token_id", None) is None
-    #     and getattr(tokenizer, "bos_token_id", None) is not None
-    # ):
-    #     model.config.decoder_start_token_id = tokenizer.bos_token_id
-    #
-    # # ---------- Tokenization ----------
-    # column_names = raw_datasets["train"].column_names
-    # logger.info(f"Columns in raw dataset: {column_names}")
-    #
-    # def preprocess_function(examples):
-    #     model_inputs = tokenizer(
-    #         answer=examples["input_text"],
-    #         max_length=max_input_length,
-    #         padding="max_length",
-    #         truncation=True,
-    #     )
-    #     with tokenizer.as_target_tokenizer():
-    #         labels = tokenizer(
-    #             answer=examples["target_text"],
-    #             max_length=max_output_length,
-    #             padding="max_length",
-    #             truncation=True,
-    #         )
-    #     model_inputs["labels"] = labels["input_ids"]
-    #     return model_inputs
-    #
-    # logger.info(
-    #     f"Tokenizing dataset (max_input_length={max_input_length}, "
-    #     f"max_output_length={max_output_length})"
-    # )
-    #
-    # tokenized_datasets = raw_datasets.map(
-    #     preprocess_function,
-    #     batched=True,
-    #     remove_columns=column_names,
-    #     desc="Tokenizing",
-    # )
-    #
-    # train_dataset = tokenized_datasets["train"]
-    # eval_dataset = tokenized_datasets.get("validation", None)
-    #
-    # logger.info(f"Train size: {len(train_dataset)}")
-    # if eval_dataset is not None:
-    #     logger.info(f"Validation size: {len(eval_dataset)}")
-    # else:
-    #     logger.warning("No validation split found; evaluation will be disabled.")
-    #
-    # # ---------- Training arguments ----------
-    # output_dir = project_root / args.output_dir
-    # output_dir.mkdir(parents=True, exist_ok=True)
-    #
-    # total_train_batch = batch_size * grad_accum
-    # logger.info(
-    #     f"Per-device batch size = {batch_size}, "
-    #     f"gradient_accumulation_steps = {grad_accum} "
-    #     f"-> effective batch size = {total_train_batch}"
-    # )
-    #
-    # train_steps_per_epoch = math.ceil(len(train_dataset) / total_train_batch)
-    # max_train_steps = int(train_steps_per_epoch * num_train_epochs)
-    # warmup_steps = int(max_train_steps * warmup_fraction)
-    # logger.info(
-    #     f"Train steps/epoch ≈ {train_steps_per_epoch}, "
-    #     f"num_train_epochs = {num_train_epochs}, "
-    #     f"max_train_steps ≈ {max_train_steps}, "
-    #     f"warmup_fraction = {warmup_fraction} -> warmup_steps = {warmup_steps}"
-    # )
-    #
-    # args_dict: Dict[str, Any] = {
-    #     "output_dir": str(output_dir),
-    #     "overwrite_output_dir": True,
-    #     "num_train_epochs": num_train_epochs,
-    #     "learning_rate": learning_rate,
-    #     "weight_decay": weight_decay,
-    #     "warmup_steps": warmup_steps,
-    #     "lr_scheduler_type": "linear",
-    #     "max_steps": -1,
-    #     "per_device_train_batch_size": batch_size,
-    #     "per_device_eval_batch_size": batch_size,
-    #     "gradient_accumulation_steps": grad_accum,
-    #     "eval_strategy": "steps" if eval_dataset is not None else "no",
-    #     "save_strategy": "steps",
-    #     "save_steps": save_steps,
-    #     "eval_steps": eval_steps,
-    #     "logging_steps": logging_steps,
-    #     "logging_first_step": True,
-    #     "predict_with_generate": predict_with_generate,
-    #     "fp16": fp16,
-    #     "dataloader_pin_memory": True,
-    #     "gradient_checkpointing": False,
-    #     "load_best_model_at_end": eval_dataset is not None,
-    #     "metric_for_best_model": "eval_loss",
-    #     "greater_is_better": False,
-    #     "save_total_limit": 2,
-    #     "report_to": ["none"],
-    #     "label_smoothing_factor": 0.0,
-    #     "max_grad_norm": 1.0,
-    # }
-    #
-    # sig = signature(Seq2SeqTrainingArguments.__init__)
-    # valid_keys = set(sig.parameters.keys()) - {"self", "*args", "**kwargs"}
-    # filtered_args = {k: v for k, v in args_dict.items() if k in valid_keys}
-    #
-    # missing = sorted(set(args_dict.keys()) - set(filtered_args.keys()))
-    # if missing:
-    #     logger.info(
-    #         "Seq2SeqTrainingArguments in your transformers version "
-    #         f"does not support: {missing}. They are skipped."
-    #     )
-    #
-    # training_args = Seq2SeqTrainingArguments(**filtered_args)
-    #
-    # data_collator = DataCollatorForSeq2Seq(
-    #     tokenizer=tokenizer,
-    #     model=model,
-    #     padding="longest",
-    # )
-    #
-    # trainer = Seq2SeqTrainer(
-    #     model=model,
-    #     args=training_args,
-    #     train_dataset=train_dataset,
-    #     eval_dataset=eval_dataset,
-    #     tokenizer=tokenizer,
-    #     data_collator=data_collator,
-    #     compute_metrics=None,
-    # )
-    #
-    # trainer.add_callback(HFLossLoggingCallback(logger))
-    #
-    # logger.info("Starting training for Stage 1 (CoT generation)")
-    # train_result = trainer.train()
-    # trainer.save_model()
-    # tokenizer.save_pretrained(str(output_dir))
-    #
-    # metrics = train_result.metrics
-    # metrics["train_samples"] = len(train_dataset)
-    # trainer.log_metrics("train", metrics)
-    # trainer.save_metrics("train", metrics)
-    # trainer.save_state()
-    #
-    # if eval_dataset is not None:
-    #     logger.info("Running final evaluation on validation set")
-    #     eval_metrics = trainer.evaluate()
-    #     eval_metrics["eval_samples"] = len(eval_dataset)
-    #     trainer.log_metrics("eval", eval_metrics)
-    #     trainer.save_metrics("eval", eval_metrics)
-    #     logger.info(f"Final eval metrics: {eval_metrics}")
 
-    # ---------- ZIP + upload to Google Drive ----------
-    if "zip_checkpoints_and_logs" in locals() and "upload_file_to_drive" in locals():
-        if zip_checkpoints_and_logs is not None and upload_file_to_drive is not None:
-            try:
-                zip_paths = zip_checkpoints_and_logs(
-                    base_dir=str(project_root / "checkpoints"),
-                    logs_dir=str(project_root / "logs"),
-                )
-                for path in zip_paths:
-                    logger.info(f"Uploading file to Google Drive: {path}")
-                    file_id = upload_file_to_drive(path)
-                    logger.info(f"Uploaded to Google Drive with file_id={file_id}")
-            except Exception as e:
-                logger.error(f"Failed to zip/upload checkpoints/logs to Google Drive: {e}")
-        else:
-            logger.info("zip_checkpoints_and_logs or upload_file_to_drive is None; skipping upload.")
+    # ---------- Load dataset ----------
+    dataset_path = project_root / args.dataset_path
+    logger.info(f"Loading Stage 1 dataset from {dataset_path}")
+    raw_datasets = load_from_disk(str(dataset_path))
+
+    # ---------- Load TAPEX ----------
+    logger.info(f"Loading TAPEX model '{model_name}'")
+    tokenizer, model = load_tapex(model_name)
+
+    if model.config.pad_token_id is None and tokenizer.pad_token_id is not None:
+        model.config.pad_token_id = tokenizer.pad_token_id
+    if (
+        getattr(model.config, "decoder_start_token_id", None) is None
+        and getattr(tokenizer, "bos_token_id", None) is not None
+    ):
+        model.config.decoder_start_token_id = tokenizer.bos_token_id
+
+    # ---------- Tokenization ----------
+    column_names = raw_datasets["train"].column_names
+    logger.info(f"Columns in raw dataset: {column_names}")
+
+    def preprocess_function(examples):
+        model_inputs = tokenizer(
+            answer=examples["input_text"],
+            max_length=max_input_length,
+            padding="max_length",
+            truncation=True,
+        )
+        with tokenizer.as_target_tokenizer():
+            labels = tokenizer(
+                answer=examples["target_text"],
+                max_length=max_output_length,
+                padding="max_length",
+                truncation=True,
+            )
+        model_inputs["labels"] = labels["input_ids"]
+        return model_inputs
+
+    logger.info(
+        f"Tokenizing dataset (max_input_length={max_input_length}, "
+        f"max_output_length={max_output_length})"
+    )
+
+    tokenized_datasets = raw_datasets.map(
+        preprocess_function,
+        batched=True,
+        remove_columns=column_names,
+        desc="Tokenizing",
+    )
+
+    train_dataset = tokenized_datasets["train"]
+    eval_dataset = tokenized_datasets.get("validation", None)
+
+    logger.info(f"Train size: {len(train_dataset)}")
+    if eval_dataset is not None:
+        logger.info(f"Validation size: {len(eval_dataset)}")
     else:
-        logger.info("zip_files/api_upload modules not available; skipping upload to Google Drive.")
+        logger.warning("No validation split found; evaluation will be disabled.")
+
+    # ---------- Training arguments ----------
+    output_dir = project_root / args.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    total_train_batch = batch_size * grad_accum
+    logger.info(
+        f"Per-device batch size = {batch_size}, gradient_accumulation_steps = {grad_accum} "
+        f"-> effective batch size = {total_train_batch}"
+    )
+
+    train_steps_per_epoch = math.ceil(len(train_dataset) / total_train_batch)
+    max_train_steps = int(train_steps_per_epoch * num_train_epochs)
+    warmup_steps = int(max_train_steps * warmup_fraction)
+    logger.info(
+        f"Train steps/epoch ≈ {train_steps_per_epoch}, "
+        f"num_train_epochs = {num_train_epochs}, "
+        f"max_train_steps ≈ {max_train_steps}, "
+        f"warmup_fraction = {warmup_fraction} -> warmup_steps = {warmup_steps}"
+    )
+
+    args_dict: Dict[str, Any] = {
+        "output_dir": str(output_dir),
+        "overwrite_output_dir": True,
+        "num_train_epochs": num_train_epochs,
+        "learning_rate": learning_rate,
+        "weight_decay": weight_decay,
+        "warmup_steps": warmup_steps,
+        "lr_scheduler_type": "linear",
+        "max_steps": -1,
+        "per_device_train_batch_size": batch_size,
+        "per_device_eval_batch_size": batch_size,
+        "gradient_accumulation_steps": grad_accum,
+        "eval_strategy": "steps" if eval_dataset is not None else "no",
+        "save_strategy": "steps",
+        "save_steps": save_steps,
+        "eval_steps": eval_steps,
+        "logging_steps": logging_steps,
+        "logging_first_step": True,
+        "predict_with_generate": predict_with_generate,
+        "fp16": fp16,
+        "dataloader_pin_memory": True,
+        "gradient_checkpointing": False,
+        "load_best_model_at_end": eval_dataset is not None,
+        "metric_for_best_model" : "eval_loss",
+        "greater_is_better" : False,
+        "save_total_limit": 2,
+        "report_to": ["none"],
+        "label_smoothing_factor": 0.0,
+        "max_grad_norm": 1.0,
+    }
+
+    sig = signature(Seq2SeqTrainingArguments.__init__)
+    valid_keys = set(sig.parameters.keys()) - {"self", "*args", "**kwargs"}
+    filtered_args = {k: v for k, v in args_dict.items() if k in valid_keys}
+
+    missing = sorted(set(args_dict.keys()) - set(filtered_args.keys()))
+    if missing:
+        logger.info(
+            f"Seq2SeqTrainingArguments in your transformers version "
+            f"does not support: {missing}. They are skipped."
+        )
+
+    training_args = Seq2SeqTrainingArguments(**filtered_args)
+
+    data_collator = DataCollatorForSeq2Seq(
+        tokenizer=tokenizer,
+        model=model,
+        padding="longest",
+    )
+
+    trainer = Seq2SeqTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        tokenizer=tokenizer,
+        data_collator=data_collator,
+        compute_metrics=None,
+    )
+
+    trainer.add_callback(HFLossLoggingCallback(logger))
+
+    logger.info("Starting training for Stage 1 (CoT generation)")
+    train_result = trainer.train()
+    trainer.save_model()
+    tokenizer.save_pretrained(str(output_dir))
+
+    metrics = train_result.metrics
+    metrics["train_samples"] = len(train_dataset)
+    trainer.log_metrics("train", metrics)
+    trainer.save_metrics("train", metrics)
+    trainer.save_state()
+
+    if eval_dataset is not None:
+        logger.info("Running final evaluation on validation set")
+        eval_metrics = trainer.evaluate()
+        eval_metrics["eval_samples"] = len(eval_dataset)
+        trainer.log_metrics("eval", eval_metrics)
+        trainer.save_metrics("eval", eval_metrics)
+
+        logger.info(f"Final eval metrics: {eval_metrics}")
 
     logger.info("Training for Stage 1 finished.")
 
